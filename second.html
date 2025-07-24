@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dino Cube Game - Desert Edition</title>
+<style>
+  /* Reset */
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+  }
+  body {
+    /* Desert sky + sand gradient */
+    background: linear-gradient(to bottom, #87ceeb 0%, #edc9af 70%, #c2a76b 100%);
+  }
+  #game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #ground {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 100px;
+    background: linear-gradient(90deg, #c2a76b 0%, #a57f43 100%);
+    box-shadow: inset 0 5px 10px rgba(255, 255, 255, 0.2);
+  }
+  #player {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    background-color: black;
+    border-radius: 12px;
+    bottom: 100px; /* On ground */
+    left: 25vw; /* About halfway left */
+  }
+  .cactus {
+    position: absolute;
+    width: 30px;
+    background-color: green;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    bottom: 100px; /* On ground */
+  }
+  #score {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    font-weight: bold;
+    font-size: 22px;
+    color: #333;
+    text-shadow: 1px 1px 2px #fff;
+  }
+  #maxScore {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-weight: bold;
+    font-size: 20px;
+    color: #333;
+    text-align: center;
+    text-shadow: 1px 1px 2px #fff;
+  }
+  #dateTime {
+    position: absolute;
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    color: #555;
+    text-shadow: 1px 1px 2px #fff;
+  }
+  #pauseBtn {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    font-size: 18px;
+    border: none;
+    border-radius: 10px;
+    background-color: #333;
+    color: white;
+    cursor: pointer;
+    user-select: none;
+  }
+  #gameOverMsg {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 32px;
+    font-weight: bold;
+    color: red;
+    text-align: center;
+    text-shadow: 2px 2px 4px #fff;
+    display: none;
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="game">
+  <div id="player"></div>
+  <div id="ground"></div>
+  <div id="score">Score: 0</div>
+  <div id="maxScore">Max Score: 0</div>
+  <div id="dateTime"></div>
+  <button id="pauseBtn">Pause</button>
+  <div id="gameOverMsg">Game Over<br>Press Space to Restart</div>
+</div>
+
+<script>
+  const game = document.getElementById("game");
+  const player = document.getElementById("player");
+  const groundHeight = 100; // px from bottom
+  const scoreDisplay = document.getElementById("score");
+  const maxScoreDisplay = document.getElementById("maxScore");
+  const dateTimeDisplay = document.getElementById("dateTime");
+  const pauseBtn = document.getElementById("pauseBtn");
+  const gameOverMsg = document.getElementById("gameOverMsg");
+
+  let isJumping = false;
+  let isGameOver = false;
+  let isPaused = false;
+  let score = 0;
+  let maxScore = 0;
+  let cactusSpeed = 7;
+  let cactusTimeout = null;
+  let scoreInterval = null;
+  let obstacles = [];
+
+  // Update DateTime every second
+  function updateDateTime() {
+    const now = new Date();
+    dateTimeDisplay.textContent = now.toLocaleString();
+  }
+  setInterval(updateDateTime, 1000);
+  updateDateTime();
+
+  // Player jump logic
+  function jump() {
+    if (isJumping || isPaused || isGameOver) return;
+    isJumping = true;
+    let jumpHeight = 0;
+    let upInterval = setInterval(() => {
+      if (jumpHeight >= 130) {
+        clearInterval(upInterval);
+        let downInterval = setInterval(() => {
+          if (jumpHeight <= 0) {
+            clearInterval(downInterval);
+            isJumping = false;
+          } else {
+            jumpHeight -= 6;
+            player.style.bottom = groundHeight + jumpHeight + "px";
+          }
+        }, 15);
+      } else {
+        jumpHeight += 6;
+        player.style.bottom = groundHeight + jumpHeight + "px";
+      }
+    }, 15);
+  }
+
+  // Create cactus with random height and add to game
+  function createCactus() {
+    if (isGameOver || isPaused) return;
+    const cactus = document.createElement("div");
+    cactus.classList.add("cactus");
+    let height = 40 + Math.floor(Math.random() * 20); // 40 to 60 px
+    cactus.style.height = height + "px";
+    cactus.style.left = game.offsetWidth + "px";
+    cactus.style.bottom = groundHeight + "px";
+    game.appendChild(cactus);
+    obstacles.push(cactus);
+
+    // Move cactus
+    function move() {
+      if (isPaused || isGameOver) return;
+      let left = parseInt(cactus.style.left);
+      if (left < -40) {
+        cactus.remove();
+        obstacles = obstacles.filter(o => o !== cactus);
+        return;
+      }
+      cactus.style.left = (left - cactusSpeed) + "px";
+
+      // Collision detection
+      let playerRect = player.getBoundingClientRect();
+      let cactusRect = cactus.getBoundingClientRect();
+
+      if (
+        playerRect.right > cactusRect.left &&
+        playerRect.left < cactusRect.right &&
+        playerRect.bottom > cactusRect.top &&
+        playerRect.top < cactusRect.bottom
+      ) {
+        gameOver();
+      }
+
+      requestAnimationFrame(move);
+    }
+    requestAnimationFrame(move);
+
+    // Schedule next cactus with intervals from 1.5 to 4.5 seconds step 0.5
+    const intervals = [1500, 2000, 2500, 3000, 3500, 4000, 4500];
+    let delay = intervals[Math.floor(Math.random() * intervals.length)];
+    cactusTimeout = setTimeout(createCactus, delay);
+  }
+
+  // Start score increment
+  function startScore() {
+    scoreInterval = setInterval(() => {
+      if (!isPaused && !isGameOver) {
+        score++;
+        scoreDisplay.textContent = "Score: " + score;
+      }
+    }, 500);
+  }
+
+  // Handle game over
+  function gameOver() {
+    isGameOver = true;
+    gameOverMsg.style.display = "block";
+    clearTimeout(cactusTimeout);
+    clearInterval(scoreInterval);
+
+    if (score > maxScore) {
+      maxScore = score;
+      maxScoreDisplay.textContent = "Max Score: " + maxScore;
+    }
+  }
+
+  // Restart game
+  function restartGame() {
+    if (!isGameOver) return;
+    isGameOver = false;
+    gameOverMsg.style.display = "none";
+    score = 0;
+    scoreDisplay.textContent = "Score: 0";
+
+    obstacles.forEach(c => c.remove());
+    obstacles = [];
+
+    player.style.bottom = groundHeight + "px";
+
+    createCactus();
+    startScore();
+  }
+
+  // Pause toggle
+  pauseBtn.addEventListener("click", () => {
+    if (isGameOver) return; // no pause when game over
+    isPaused = !isPaused;
+    pauseBtn.textContent = isPaused ? "Resume" : "Pause";
+  });
+
+  // Space key for jump or restart
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Space") {
+      e.preventDefault();
+      if (isGameOver) {
+        restartGame();
+      } else {
+        jump();
+      }
+    }
+  });
+
+  // Start game on page load
+  createCactus();
+  startScore();
+</script>
+</body>
+</html>
